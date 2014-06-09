@@ -1,8 +1,5 @@
 #!/usr/bin/env python
-"""Show slideshow for images in a given directory (recursively) in cycle.
- 
-If no directory is specified, it uses the current directory.
-"""
+
 import os
 import platform
 import sys
@@ -13,36 +10,49 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 from random import shuffle
- 
+from piggyphoto import piggyphoto
+
 class Slideshow(object):
-    def __init__(self, parent, imgdir, slideshow_delay=2, history_size=100):
+    def __init__(self, parent, imgdir, slideshow_delay=2, fps=100, picturenames='fotobox'):
         self.ma = parent.winfo_toplevel()
+        self.slideshow_delay = slideshow_delay
+        self.spf = int(1000 / fps)
         self.imgdir = imgdir
+        self.counter = 0
+        self.picture_names = picturenames
         self.update_files()
-        self._files = deque(maxlen=history_size)  # for prev/next files
         self._photo_image = None  # must hold reference to PhotoImage
         self._id = None  # used to cancel pending show_image() callbacks
+
+        self.camera = None
         self.imglbl = tk.Label(parent)  # it contains current image
         # label occupies all available space
         self.imglbl.pack(fill=tk.BOTH, expand=True)
  
         # start slideshow on the next tick
-        self.imglbl.after(1, self._slideshow, slideshow_delay * 1000)
+        self.after = self.imglbl.after(1, self._slideshow, self.slideshow_delay * 1000)
  
     def _slideshow(self, delay_milliseconds):
-        self._files.append(next(self.filenames))
         self.show_image()
-        self.imglbl.after(delay_milliseconds,
+        self.after = self.imglbl.after(delay_milliseconds,
                            self._slideshow, delay_milliseconds)
- 
-    def show_image(self):
-        filename = self._files[-1]
+
+    def _liveview(self, delay_milliseconds):
+        self.show_image(liveview=True)
+        self.after = self.imglbl.after(delay_milliseconds,
+                           self._liveview, delay_milliseconds)
+
+    def show_image(self, liveview=False):
+        if liveview:
+            filename = '/tmp/liveview.jpg'
+            self.camera.capture_preview('/tmp/liveview.jpg')
+        else:
+            filename = next(self.filenames)
         image = Image.open(filename)  # note: let OS manage file cache
  
         # shrink image inplace to fit in the application window
         w, h = self.ma.winfo_width(), self.ma.winfo_height()
         if image.size[0] > w or image.size[1] > h:
-            # note: ImageOps.fit() copies image
             # preserve aspect ratio
             image.thumbnail((w - 2, h - 2), Image.ANTIALIAS)
  
@@ -68,61 +78,85 @@ class Slideshow(object):
             _last[:] = event.width, event.height
             self._show_image_on_next_tick()
 
-    def toggle(self):
+    def capture_image(self):
+        filename = ''.join(('/tmp/imgs/', self.picture_names, '_', str(self.counter).zfill(4), '.jpg'))
+        self.counter += 1
+        if self.camera is None:
+            self.toggle_camera()
+        self.camera.capture_image(filename)
+
+
+    def toggle_camera(self):
+        self.imglbl.after_cancel(self.after)
+        self.after = None
+        if self.camera is None:
+            self.camera = piggyphoto.camera()
+            self.camera.leave_locked()
+            self.after = self.imglbl.after(1, self._liveview, self.spf)
+        else:
+            self.camera._leave_locked = False
+            self.camera = None
+            self.update_files()
+            self.after = self.imglbl.after(1, self._slideshow, self.slideshow_delay * 1000)
+
+    def _toggle(self):
         if self.imglbl.winfo_ismapped():
             self.imglbl.pack_forget()
         else:
-            self.update_files()
             self.imglbl.pack(fill=tk.BOTH, expand=True)
+
     def update_files(self):
         self.filenames = cycle(get_image_files(self.imgdir))
 
 
 def get_image_files(rootdir):
     for path, dirs, files in os.walk(rootdir):
-        #dirs.sort()   # traverse directory in sorted order (by name)
-        #files.sort()  # show images in sorted order
         shuffle(dirs)
         shuffle(files)
         for filename in files:
             if filename.lower().endswith('.jpg'):
                 yield os.path.join(path, filename)
  
-def quit(window):
-    if messagebox.askquestion('Quit', 'Do you really want to quit?') == 'yes':
-        window.destroy()
+class Application:
+    def __init__(self):
+        self.root = tk.Tk()
 
-def main():
-    root = tk.Tk()
-    # get image filenames
-    imagedir = sys.argv[1] if len(sys.argv) > 1 else '.'
- 
-    # configure initial size
-    if platform.system() == "Windows":
-        root.wm_state('zoomed')  # start maximized
-    else:
-        width, height, xoffset, yoffset = 400, 300, 0, 0
-        # double-click the title bar to maximize the app
-        # or uncomment:
- 
-        # # remove title bar
-        #root.overrideredirect(True) # <- this makes it hard to kill
-        # width, height = root.winfo_screenwidth(), root.winfo_screenheight()
-        root.geometry("%dx%d%+d%+d" % (width, height, xoffset, yoffset))
- 
-    try:  # start slideshow
-        app = Slideshow(root, imagedir, slideshow_delay=2)
-    except StopIteration:
-        sys.exit("no image files found in %r" % (imagedir,))
+        imagedir = sys.argv[1] if len(sys.argv) > 1 else '.'
+     
+        # configure initial size
+        if platform.system() == "Windows":
+            self.root.wm_state('zoomed')  # start maximized
+        else:
+            width, height, xoffset, yoffset = 400, 300, 0, 0
+            # double-click the title bar to maximize the app
+            # or uncomment:
+     
+            # # remove title bar
+            #root.overrideredirect(True) # <- this makes it hard to kill
+            # width, height = root.winfo_screenwidth(), root.winfo_screenheight()
+            self.root.geometry("%dx%d%+d%+d" % (width, height, xoffset, yoffset))
+     
+        try:  # start slideshow
+            self.window = Slideshow(self.root, imagedir, slideshow_delay=2)
+        except StopIteration:
+            sys.exit("no image files found in %r" % (imagedir,))
 
 
-    # configure keybindings
-    root.bind("q", lambda _: quit(root))  # exit on Esc
-    root.bind('a', lambda _: app.toggle())
-    root.bind("<Configure>", app.fit_image)  # fit image on resize
-    root.focus_set()
-    root.mainloop()
- 
+        # configure keybindings
+        self.root.bind("q", lambda _: self.quit())  # exit on Esc
+        self.root.bind('a', lambda _: self.window.toggle_camera())
+        self.root.bind("<Configure>", self.window.fit_image)  # fit image on resize
+        self.root.bind("<space>", lambda _: self.window.capture_image())
+        self.root.focus_set()
+        self.root.mainloop()
+
+    def quit(self):
+        if messagebox.askquestion('Quit', 'Do you really want to quit?') == 'yes':
+            if self.window.camera is not None:
+                self.window.camera._leave_locked = False
+                del self.window.camera 
+            self.root.destroy()
+
 if __name__ == '__main__':
-    main()
+    app = Application()
 
