@@ -12,7 +12,7 @@ from PIL import Image, ImageTk
 from random import shuffle
 from piggyphoto import piggyphoto
 
-class Slideshow(object):
+class Mainwindow(object):
     def __init__(self, parent, imgdir, slideshow_delay=2, fps=100, picturenames='fotobox'):
         self.ma = parent.winfo_toplevel()
         self.slideshow_delay = slideshow_delay
@@ -61,9 +61,6 @@ class Slideshow(object):
         self._photo_image = ImageTk.PhotoImage(image)
         self.imglbl.configure(image=self._photo_image)
  
-        # set application window title
-        self.ma.wm_title(filename)
- 
     def _show_image_on_next_tick(self):
         # cancel previous callback schedule a new one
         if self._id is not None:
@@ -85,7 +82,6 @@ class Slideshow(object):
             self.toggle_camera()
         self.camera.capture_image(filename)
 
-
     def toggle_camera(self):
         self.imglbl.after_cancel(self.after)
         self.after = None
@@ -98,12 +94,6 @@ class Slideshow(object):
             self.camera = None
             self.update_files()
             self.after = self.imglbl.after(1, self._slideshow, self.slideshow_delay * 1000)
-
-    def _toggle(self):
-        if self.imglbl.winfo_ismapped():
-            self.imglbl.pack_forget()
-        else:
-            self.imglbl.pack(fill=tk.BOTH, expand=True)
 
     def update_files(self):
         self.filenames = cycle(get_image_files(self.imgdir))
@@ -128,16 +118,11 @@ class Application:
             self.root.wm_state('zoomed')  # start maximized
         else:
             width, height, xoffset, yoffset = 400, 300, 0, 0
-            # double-click the title bar to maximize the app
-            # or uncomment:
-     
-            # # remove title bar
-            #root.overrideredirect(True) # <- this makes it hard to kill
-            # width, height = root.winfo_screenwidth(), root.winfo_screenheight()
             self.root.geometry("%dx%d%+d%+d" % (width, height, xoffset, yoffset))
+        self.root.winfo_toplevel().wm_title('Fotobox')
      
         try:  # start slideshow
-            self.window = Slideshow(self.root, imagedir, slideshow_delay=2)
+            self.window = Mainwindow(self.root, imagedir, slideshow_delay=2)
         except StopIteration:
             sys.exit("no image files found in %r" % (imagedir,))
 
@@ -159,4 +144,3 @@ class Application:
 
 if __name__ == '__main__':
     app = Application()
-
