@@ -22,25 +22,28 @@ class Mainwindow(object):
         self.picture_names = picturenames
         self.update_files()
         self._photo_image = None  # must hold reference to PhotoImage
-        self._id = None  # used to cancel pending show_image() callbacks
 
         self.camera = None
         self.imglbl = tk.Label(parent)  # it contains current image
+        self.countdownlbl = tk.Label(parent, font=("Helvetica", 40))
         # label occupies all available space
         self.imglbl.pack(fill=tk.BOTH, expand=True)
  
+        self.countdownlbl.pack()
         # start slideshow on the next tick
         self.after = self.imglbl.after(1, self._slideshow, self.slideshow_delay * 1000)
+        self.capture = None
+        self.counting_down = None
  
     def _slideshow(self, delay_milliseconds):
         self.show_image()
         self.after = self.imglbl.after(delay_milliseconds,
                            self._slideshow, delay_milliseconds)
 
-    def _liveview(self, delay_milliseconds):
+    def _liveview(self):
         self.show_image(liveview=True)
-        self.after = self.imglbl.after(delay_milliseconds,
-                           self._liveview, delay_milliseconds)
+        self.after = self.imglbl.after(self.spf,
+                           self._liveview)
 
     def show_image(self, liveview=False):
         if liveview:
@@ -60,27 +63,43 @@ class Mainwindow(object):
         # create new image instead
         self._photo_image = ImageTk.PhotoImage(image)
         self.imglbl.configure(image=self._photo_image)
- 
-    def _show_image_on_next_tick(self):
-        # cancel previous callback schedule a new one
-        if self._id is not None:
-            self.imglbl.after_cancel(self._id)
-        self._id = self.imglbl.after(1, self.show_image)
- 
-    def fit_image(self, event=None, _last=[None] * 2):
-        """Fit image inside application window on resize."""
-        if event is not None and event.widget is self.ma and (
-            _last[0] != event.width or _last[1] != event.height):
-            # size changed; update image
-            _last[:] = event.width, event.height
-            self._show_image_on_next_tick()
+
+
+    def wait_for_next_picture(self):
+        self._liveview()
+        self.counting_down = None
+        if self.capture:
+            self.imglbl.after_cancel(self.capture)
+        self.capture= self.imglbl.after(10000, self.toggle_camera)
+
+    def show_taken_picture(self):
+        self.imglbl.after_cancel(self.after)
+        self.capture = self.imglbl.after(3000, self.wait_for_next_picture)
 
     def capture_image(self):
+        
         filename = ''.join(('/tmp/imgs/', self.picture_names, '_', str(self.counter).zfill(4), '.jpg'))
         self.counter += 1
-        if self.camera is None:
-            self.toggle_camera()
         self.camera.capture_image(filename)
+        self.show_taken_picture()
+
+    def start_countdown(self):
+        if not self.counting_down:
+            if self.capture:
+                self.imglbl.after_cancel(self.capture)
+            if self.camera is None:
+                self.toggle_camera()
+            else:
+                self.countdown(3)
+
+
+    def countdown(self, remaining):
+        if remaining >= 0:
+            self.countdownlbl['text'] = str(remaining)
+            self.counting_down = self.countdownlbl.after(1000, self.countdown, remaining - 1)
+        else:
+            self.countdownlbl['text'] = ''
+            self.capture_image()
 
     def toggle_camera(self):
         self.imglbl.after_cancel(self.after)
@@ -88,7 +107,7 @@ class Mainwindow(object):
         if self.camera is None:
             self.camera = piggyphoto.camera()
             self.camera.leave_locked()
-            self.after = self.imglbl.after(1, self._liveview, self.spf)
+            self.after = self.imglbl.after(1, self._liveview)
         else:
             self.camera._leave_locked = False
             self.camera = None
@@ -129,9 +148,7 @@ class Application:
 
         # configure keybindings
         self.root.bind("q", lambda _: self.quit())  # exit on Esc
-        self.root.bind('a', lambda _: self.window.toggle_camera())
-        self.root.bind("<Configure>", self.window.fit_image)  # fit image on resize
-        self.root.bind("<space>", lambda _: self.window.capture_image())
+        self.root.bind("<space>", lambda _: self.window.start_countdown())
         self.root.focus_set()
         self.root.mainloop()
 
