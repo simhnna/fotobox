@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 from random import shuffle
-from piggyphoto.piggyphoto import piggyphoto
+from piggyphoto import piggyphoto
 
 class Mainwindow(object):
     def __init__(self, parent, imgdir, slideshow_delay=2, fps=100, picturenames='fotobox'):
